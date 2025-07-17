@@ -196,34 +196,29 @@ impl Game {
         init_print()?;
         print!("{self}");
         loop {
-            match read()? {
-                Event::Key(event) => {
-                    if match event.code {
-                        crossterm::event::KeyCode::Left => self.left(),
-                        crossterm::event::KeyCode::Right => self.right(),
-                        crossterm::event::KeyCode::Down => self.down(),
-                        crossterm::event::KeyCode::Up => self.up(),
-                        crossterm::event::KeyCode::Esc | crossterm::event::KeyCode::Char('q') => {
-                            break
-                        }
-                        crossterm::event::KeyCode::Char('c')
-                            if event.modifiers.contains(KeyModifiers::CONTROL) =>
-                        {
-                            break
-                        }
-                        _ => {
-                            continue;
-                        }
-                    } {
-                        self.add();
+            if let Event::Key(event) = read()? {
+                if match event.code {
+                    crossterm::event::KeyCode::Left => self.left(),
+                    crossterm::event::KeyCode::Right => self.right(),
+                    crossterm::event::KeyCode::Down => self.down(),
+                    crossterm::event::KeyCode::Up => self.up(),
+                    crossterm::event::KeyCode::Esc | crossterm::event::KeyCode::Char('q') => break,
+                    crossterm::event::KeyCode::Char('c')
+                        if event.modifiers.contains(KeyModifiers::CONTROL) =>
+                    {
+                        break
                     }
-                    print!("{self}");
-                    if self.lost() {
-                        lost = true;
-                        break;
+                    _ => {
+                        continue;
                     }
+                } {
+                    self.add();
                 }
-                _ => {}
+                print!("{self}");
+                if self.lost() {
+                    lost = true;
+                    break;
+                }
             }
         }
         if lost {
@@ -284,7 +279,7 @@ pub fn init_print() -> Result<(), std::io::Error> {
 pub fn clean_print() -> Result<(), std::io::Error> {
     execute!(std::io::stdout(), Show)?;
     disable_raw_mode()?;
-    println!("");
+    println!();
     Ok(())
 }
 

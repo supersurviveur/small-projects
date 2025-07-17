@@ -1,22 +1,61 @@
+use crossterm::cursor::{Hide, MoveTo, MoveToNextLine, Show};
+use crossterm::event::{poll, read, Event, KeyModifiers};
+use crossterm::execute;
+use crossterm::terminal::{disable_raw_mode, enable_raw_mode, Clear, ClearType};
 use rand::Rng;
-use std::fmt::Write;
-use std::thread::sleep;
 use std::time::Duration;
 use std::{
     fmt::Display,
     ops::{Index, IndexMut},
 };
 
-#[derive(PartialEq)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum GameMode {
     Dead,
     Alive,
     Portal,
 }
 
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum DisplayMode {
+    Text1x1,
+    Text1x2,
+    Text2x2,
+    Text2x3,
+    Text2x4,
+}
+
+const TEXT_1X1: [char; 2] = [' ', '█'];
+const TEXT_1X2: [char; 4] = [' ', '▀', '▄', '█'];
+const TEXT_2X2: [char; 16] = [
+    ' ', '▘', '▝', '▀', '▖', '▌', '▞', '▛', '▗', '▚', '▐', '▜', '▄', '▙', '▟', '█',
+];
+const TEXT_2X3: [char; 64] = [
+    ' ', '🬀', '🬁', '🬂', '🬃', '🬄', '🬅', '🬆', '🬇', '🬈', '🬉', '🬊', '🬋', '🬌', '🬍', '🬎', '🬏', '🬐', '🬑',
+    '🬒', '🬓', '▌', '🬔', '🬕', '🬖', '🬗', '🬘', '🬙', '🬚', '🬛', '🬜', '🬝', '🬞', '🬟', '🬠', '🬡', '🬢', '🬣',
+    '🬤', '🬥', '🬦', '🬧', '▐', '🬨', '🬩', '🬪', '🬫', '🬬', '🬭', '🬮', '🬯', '🬰', '🬱', '🬲', '🬳', '🬴', '🬵',
+    '🬶', '🬷', '🬸', '🬹', '🬺', '🬻', '█',
+];
+const TEXT_2X4: [char; 256] = [
+    ' ', '𜺨', '𜺫', '🮂', '𜴀', '▘', '𜴁', '𜴂', '𜴃', '𜴄', '▝', '𜴅', '𜴆', '𜴇', '𜴈', '▀', '𜴉', '𜴊', '𜴋',
+    '𜴌', '🯦', '𜴍', '𜴎', '𜴏', '𜴐', '𜴑', '𜴒', '𜴓', '𜴔', '𜴕', '𜴖', '𜴗', '𜴘', '𜴙', '𜴚', '𜴛', '𜴜', '𜴝',
+    '𜴞', '𜴟', '🯧', '𜴠', '𜴡', '𜴢', '𜴣', '𜴤', '𜴥', '𜴦', '𜴧', '𜴨', '𜴩', '𜴪', '𜴫', '𜴬', '𜴭', '𜴮', '𜴯',
+    '𜴰', '𜴱', '𜴲', '𜴳', '𜴴', '𜴵', '🮅', '𜺣', '𜴶', '𜴷', '𜴸', '𜴹', '𜴺', '𜴻', '𜴼', '𜴽', '𜴾', '𜴿', '𜵀',
+    '𜵁', '𜵂', '𜵃', '𜵄', '▖', '𜵅', '𜵆', '𜵇', '𜵈', '▌', '𜵉', '𜵊', '𜵋', '𜵌', '▞', '𜵍', '𜵎', '𜵏', '𜵐',
+    '▛', '𜵑', '𜵒', '𜵓', '𜵔', '𜵕', '𜵖', '𜵗', '𜵘', '𜵙', '𜵚', '𜵛', '𜵜', '𜵝', '𜵞', '𜵟', '𜵠', '𜵡', '𜵢',
+    '𜵣', '𜵤', '𜵥', '𜵦', '𜵧', '𜵨', '𜵩', '𜵪', '𜵫', '𜵬', '𜵭', '𜵮', '𜵯', '𜵰', '𜺠', '𜵱', '𜵲', '𜵳', '𜵴',
+    '𜵵', '𜵶', '𜵷', '𜵸', '𜵹', '𜵺', '𜵻', '𜵼', '𜵽', '𜵾', '𜵿', '𜶀', '𜶁', '𜶂', '𜶃', '𜶄', '𜶅', '𜶆', '𜶇',
+    '𜶈', '𜶉', '𜶊', '𜶋', '𜶌', '𜶍', '𜶎', '𜶏', '▗', '𜶐', '𜶑', '𜶒', '𜶓', '▚', '𜶔', '𜶕', '𜶖', '𜶗', '▐',
+    '𜶘', '𜶙', '𜶚', '𜶛', '▜', '𜶜', '𜶝', '𜶞', '𜶟', '𜶠', '𜶡', '𜶢', '𜶣', '𜶤', '𜶥', '𜶦', '𜶧', '𜶨', '𜶩',
+    '𜶪', '𜶫', '▂', '𜶬', '𜶭', '𜶮', '𜶯', '𜶰', '𜶱', '𜶲', '𜶳', '𜶴', '𜶵', '𜶶', '𜶷', '𜶸', '𜶹', '𜶺', '𜶻',
+    '𜶼', '𜶽', '𜶾', '𜶿', '𜷀', '𜷁', '𜷂', '𜷃', '𜷄', '𜷅', '𜷆', '𜷇', '𜷈', '𜷉', '𜷊', '𜷋', '𜷌', '𜷍', '𜷎',
+    '𜷏', '𜷐', '𜷑', '𜷒', '𜷓', '𜷔', '𜷕', '𜷖', '𜷗', '𜷘', '𜷙', '𜷚', '▄', '𜷛', '𜷜', '𜷝', '𜷞', '▙', '𜷟',
+    '𜷠', '𜷡', '𜷢', '▟', '𜷣', '▆', '𜷤', '𜷥', '█',
+];
+
 #[derive(Clone)]
 pub struct Grid {
-    grid: Vec<bool>,
+    grid: Box<[bool]>,
 
     height: usize,
     width: usize,
@@ -26,7 +65,7 @@ impl Grid {
         Self {
             height,
             width,
-            grid: vec![false; height * width],
+            grid: vec![false; height * width].into_boxed_slice(),
         }
     }
     pub fn random(height: usize, width: usize) -> Self {
@@ -48,24 +87,44 @@ pub struct GameOfLife {
     width: usize,
     grid: Grid,
     mode: GameMode,
+    display_mode: DisplayMode,
 }
 
 impl GameOfLife {
-    pub fn new(height: usize, width: usize) -> Self {
+    pub fn with_grid(grid: Grid, display_mode: DisplayMode) -> Self {
         Self {
-            height,
-            width,
-            grid: Grid::new(height, width),
+            height: grid.height,
+            width: grid.width,
+            grid,
             mode: GameMode::Portal,
+            display_mode,
         }
     }
-    pub fn random(height: usize, width: usize) -> Self {
-        Self {
-            height,
-            width,
-            grid: Grid::random(height, width),
-            mode: GameMode::Portal,
+    pub fn new(height: usize, width: usize, display_mode: DisplayMode) -> Self {
+        Self::with_grid(Grid::new(height, width), display_mode)
+    }
+    pub fn random(height: usize, width: usize, display_mode: DisplayMode) -> Self {
+        Self::with_grid(Grid::random(height, width), display_mode)
+    }
+    pub fn random_full(display_mode: DisplayMode) -> Result<Self, std::io::Error> {
+        let (mut width, mut height) = crossterm::terminal::size()?;
+        match display_mode {
+            DisplayMode::Text1x1 => {}
+            DisplayMode::Text1x2 => height *= 2,
+            DisplayMode::Text2x2 => {
+                width *= 2;
+                height *= 2;
+            }
+            DisplayMode::Text2x3 => {
+                width *= 2;
+                height *= 3;
+            }
+            DisplayMode::Text2x4 => {
+                width *= 2;
+                height *= 4;
+            }
         }
+        Ok(Self::random(height as usize, width as usize, display_mode))
     }
     pub fn step(&mut self) {
         let copied = self.grid.clone();
@@ -73,7 +132,7 @@ impl GameOfLife {
             for y in 0..self.height {
                 let nb = self.count_neighbours(&copied, x, y);
                 self.grid[(x, y)] = if self.grid[(x, y)] {
-                    nb >= 2 && nb <= 3
+                    (2..=3).contains(&nb)
                 } else {
                     nb == 3
                 }
@@ -139,37 +198,33 @@ impl GameOfLife {
 
 impl Display for GameOfLife {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut res = String::new();
-        write!(res, "\x1b[1;1H")?;
-        for y in (0..self.height).step_by(2) {
-            for x in (0..self.width).step_by(2) {
-                match (
-                    self.grid[(x, y)],
-                    self.grid[(x + 1, y)],
-                    self.grid[(x, y + 1)],
-                    self.grid[(x + 1, y + 1)],
-                ) {
-                    (true, true, true, true) => write!(res, "█")?,
-                    (true, true, true, false) => write!(res, "▛")?,
-                    (true, true, false, true) => write!(res, "▜")?,
-                    (true, false, true, true) => write!(res, "▙")?,
-                    (false, true, true, true) => write!(res, "▟")?,
-                    (true, true, false, false) => write!(res, "▀")?,
-                    (true, false, true, false) => write!(res, "▌")?,
-                    (false, true, true, false) => write!(res, "▞")?,
-                    (true, false, false, true) => write!(res, "▚")?,
-                    (false, true, false, true) => write!(res, "▐")?,
-                    (false, false, true, true) => write!(res, "▄")?,
-                    (true, false, false, false) => write!(res, "▘")?,
-                    (false, true, false, false) => write!(res, "▝")?,
-                    (false, false, true, false) => write!(res, "▖")?,
-                    (false, false, false, true) => write!(res, "▗")?,
-                    (false, false, false, false) => write!(res, " ")?,
+        execute!(std::io::stdout(), MoveTo(0, 0)).map_err(|_| std::fmt::Error)?;
+        let (patterns, width, height) = match self.display_mode {
+            DisplayMode::Text1x1 => (TEXT_1X1.as_slice(), 1, 1),
+            DisplayMode::Text1x2 => (TEXT_1X2.as_slice(), 1, 2),
+            DisplayMode::Text2x2 => (TEXT_2X2.as_slice(), 2, 2),
+            DisplayMode::Text2x3 => (TEXT_2X3.as_slice(), 2, 3),
+            DisplayMode::Text2x4 => (TEXT_2X4.as_slice(), 2, 4),
+        };
+        for y in (0..self.height).step_by(height) {
+            for x in (0..self.width).step_by(width) {
+                let mut code = 0;
+                for i in (0..height).rev() {
+                    for j in (0..width).rev() {
+                        code <<= 1;
+                        if (0..self.height).contains(&(i + y))
+                            && (0..self.width).contains(&(j + x))
+                            && self.grid[(x + j, y + i)]
+                        {
+                            code |= 1;
+                        }
+                    }
                 }
+                write!(f, "{}", patterns[code])?;
             }
-            writeln!(res, "")?;
+            execute!(std::io::stdout(), MoveToNextLine(1)).map_err(|_| std::fmt::Error)?;
         }
-        write!(f, "{res}")
+        Ok(())
     }
 }
 
@@ -187,25 +242,55 @@ impl IndexMut<(usize, usize)> for Grid {
     }
 }
 
-fn hide_cursor() {
-    print!("\x1b[?25l")
+impl Index<(usize, usize)> for GameOfLife {
+    type Output = bool;
+
+    fn index(&self, index: (usize, usize)) -> &Self::Output {
+        &self.grid[index]
+    }
 }
-fn show_cursor() {
-    print!("\x1b[?25h")
+
+impl IndexMut<(usize, usize)> for GameOfLife {
+    fn index_mut(&mut self, index: (usize, usize)) -> &mut Self::Output {
+        &mut self.grid[index]
+    }
+}
+
+pub fn init_print() -> Result<(), std::io::Error> {
+    execute!(std::io::stdout(), Clear(ClearType::All), Hide)?;
+    enable_raw_mode()
+}
+
+pub fn clean_print() -> Result<(), std::io::Error> {
+    execute!(std::io::stdout(), Show)?;
+    disable_raw_mode()?;
+    println!();
+    Ok(())
 }
 
 pub fn main() {
-    hide_cursor();
-    let mut g = GameOfLife::random(100, 114);
+    init_print().unwrap();
+    let mut g = GameOfLife::random_full(DisplayMode::Text2x4).unwrap();
     // let mut g = GameOfLife::new(80, 100);
 
-    // g.grid[(5, 5)] = true;
-    // g.grid[(5, 6)] = true;
-    // g.grid[(5, 7)] = true;
     loop {
         print!("{g}");
         g.step();
         // sleep(Duration::from_millis(200))
+
+        if poll(Duration::from_secs(0)).unwrap() {
+            if let Event::Key(event) = read().unwrap() {
+                match event.code {
+                    crossterm::event::KeyCode::Esc | crossterm::event::KeyCode::Char('q') => break,
+                    crossterm::event::KeyCode::Char('c')
+                        if event.modifiers.contains(KeyModifiers::CONTROL) =>
+                    {
+                        break
+                    }
+                    _ => {}
+                }
+            }
+        }
     }
-    
+    clean_print().unwrap();
 }
