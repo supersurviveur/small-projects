@@ -1,13 +1,19 @@
+pub mod renderer;
+
+use ::rand::Rng;
 use crossterm::cursor::{Hide, MoveTo, MoveToNextLine, Show};
-use crossterm::event::{poll, read, Event, KeyModifiers};
+use crossterm::event::{Event, KeyModifiers, poll, read};
 use crossterm::execute;
-use crossterm::terminal::{disable_raw_mode, enable_raw_mode, Clear, ClearType};
-use rand::Rng;
+use crossterm::terminal::{Clear, ClearType, disable_raw_mode, enable_raw_mode};
+use renderer::Renderer;
+use std::thread::sleep;
 use std::time::Duration;
 use std::{
     fmt::Display,
     ops::{Index, IndexMut},
 };
+
+use macroquad::prelude::*;
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum GameMode {
@@ -23,6 +29,7 @@ pub enum DisplayMode {
     Text2x2,
     Text2x3,
     Text2x4,
+    Visual,
 }
 
 const TEXT_1X1: [char; 2] = [' ', '█'];
@@ -70,7 +77,7 @@ impl Grid {
     }
     pub fn random(height: usize, width: usize) -> Self {
         let mut grid = Self::new(height, width);
-        let mut rng = rand::rng();
+        let mut rng = ::rand::rng();
         for y in 0..height {
             for x in 0..width {
                 if rng.random_bool(0.2) {
@@ -122,6 +129,10 @@ impl GameOfLife {
             DisplayMode::Text2x4 => {
                 width *= 2;
                 height *= 4;
+            }
+            DisplayMode::Visual => {
+                width = screen_width().floor() as u16 * 2;
+                height = screen_height().floor() as u16 * 2;
             }
         }
         Ok(Self::random(height as usize, width as usize, display_mode))
@@ -205,6 +216,7 @@ impl Display for GameOfLife {
             DisplayMode::Text2x2 => (TEXT_2X2.as_slice(), 2, 2),
             DisplayMode::Text2x3 => (TEXT_2X3.as_slice(), 2, 3),
             DisplayMode::Text2x4 => (TEXT_2X4.as_slice(), 2, 4),
+            DisplayMode::Visual => unreachable!(),
         };
         for y in (0..self.height).step_by(height) {
             for x in (0..self.width).step_by(width) {
@@ -268,29 +280,43 @@ pub fn clean_print() -> Result<(), std::io::Error> {
     Ok(())
 }
 
-pub fn main() {
-    init_print().unwrap();
-    let mut g = GameOfLife::random_full(DisplayMode::Text2x4).unwrap();
+pub fn terminal_events() -> bool {
+    if poll(Duration::from_secs(0)).unwrap()
+        && let Event::Key(event) = read().unwrap()
+    {
+        match event.code {
+            crossterm::event::KeyCode::Esc | crossterm::event::KeyCode::Char('q') => true,
+            crossterm::event::KeyCode::Char('c')
+                if event.modifiers.contains(KeyModifiers::CONTROL) =>
+            {
+                true
+            }
+            _ => false,
+        }
+    } else {
+        false
+    }
+}
+
+#[macroquad::main("Game of Life")]
+pub async fn main() {
+    clear_background(BLACK);
+    next_frame().await;
+
+    // init_print().unwrap();
+    let mut g = GameOfLife::random_full(DisplayMode::Visual).unwrap();
+    let mut renderer = Renderer::default();
     // let mut g = GameOfLife::new(80, 100);
 
     loop {
-        print!("{g}");
+        // print!("{g}");
+        // if terminal_events() {
+        //     break;
+        // }
         g.step();
         // sleep(Duration::from_millis(200))
 
-        if poll(Duration::from_secs(0)).unwrap() {
-            if let Event::Key(event) = read().unwrap() {
-                match event.code {
-                    crossterm::event::KeyCode::Esc | crossterm::event::KeyCode::Char('q') => break,
-                    crossterm::event::KeyCode::Char('c')
-                        if event.modifiers.contains(KeyModifiers::CONTROL) =>
-                    {
-                        break
-                    }
-                    _ => {}
-                }
-            }
-        }
+        renderer.render(&g).await
     }
-    clean_print().unwrap();
+    // clean_print().unwrap();
 }
