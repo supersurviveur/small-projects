@@ -1,3 +1,6 @@
+use meteo_rs::impls::meteociel::MeteoCielCity;
+
+
 
 #[tokio::main]
 pub async fn main() -> Result<(), reqwest::Error> {
@@ -7,5 +10,7 @@ pub async fn main() -> Result<(), reqwest::Error> {
         .await?;
 
     println!("body = {body:?}");
+
+    MeteoCielCity::new("test", 0);
     Ok(())
 }
