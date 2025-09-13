@@ -1,3 +1,3 @@
-pub mod city;
+pub mod location;
 pub mod forecast;
 pub mod impls;
