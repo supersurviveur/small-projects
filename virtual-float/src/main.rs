@@ -2,10 +2,9 @@
 use std::{
     fmt::{Binary, Debug},
     ops::Add,
-    u64,
 };
 
-use virtual_float::natural::Natural;
+use virtual_float::integer::Integer;
 
 // pub struct Virtualf32(pub(crate) u32);
 
@@ -84,13 +83,15 @@ fn main() {
     // println!("{b:?}");
     // println!("{:?}", a + b);
 
-    let a = Natural::from(20u64);
-    let b = Natural::from(100000u64);
-    let c = Natural::from(u64::MAX);
-    println!("{}", a.clone() - a.clone());
-    // println!("{:?}", a.clone() << 1);
-    println!("{}", a.clone() * b.clone());
-    println!("quo: {}", a.quot_rem(b).1);
-    println!("test: {}", c.clone());
-    println!("test: {}", (c.clone() * c.clone()));
+    let a = Integer::from(-21i64);
+    let b = Integer::from(-3i64);
+    let c = Integer::from(u64::MAX);
+    println!("{}", a.clone());
+    println!("{}", b.clone());
+    println!("{}", a.clone() + b.clone());
+    println!("{}", a.clone() - b.clone());
+    println!("{}", b.clone() - a.clone());
+    println!("{}", c.clone() + a.clone());
+    println!("{:?}", a.clone().quot_rem(b.clone()));
+    println!("{}", a.clone() >> 1);
 }

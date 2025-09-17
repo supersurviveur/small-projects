@@ -157,6 +157,14 @@ impl Add for Natural {
         self
     }
 }
+impl Add<u8> for Natural {
+    type Output = Natural;
+
+    fn add(self, rhs: u8) -> Self::Output {
+        self + Natural::from(rhs)
+    }
+}
+
 impl Sub for Natural {
     type Output = Natural;
 
@@ -284,8 +292,18 @@ impl FromStr for Natural {
     type Err = ParseNaturalError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        for c in s.chars() {
-            
+        let mut result = Self::zero();
+        if s.is_empty() {
+            return Err(ParseNaturalError);
         }
+        for c in s.chars() {
+            result = result * 10u8.into();
+            if c.is_numeric() && c.is_ascii_alphanumeric() {
+                result = result + Natural::from((c as u8) - b'0');
+            } else {
+                return Err(ParseNaturalError);
+            }
+        }
+        Ok(result)
     }
 }

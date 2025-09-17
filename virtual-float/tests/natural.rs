@@ -149,16 +149,37 @@ mod tests {
 
         let a = Natural::from(u64::MAX);
         let b = Natural::from(u64::MAX);
-        assert_eq!(
-            a * b,
-            Natural::new(vec![
-                1,
-                0b1111111111111111111111111111111111111111111111111111111111111110
-            ])
-        );
+        assert_eq!(a * b, Natural::new(vec![1, !1]));
 
         let a = Natural::from(0u8);
         let b = Natural::from(0u8);
         assert_eq!(a * b, 0u8.into());
+    }
+
+    #[test]
+    fn test_parsing() {
+        let a: Result<Natural, _> = "0".parse();
+        assert!(a.is_ok());
+        assert_eq!(a.unwrap(), Natural::zero());
+
+        let a: Result<Natural, _> = "0000000".parse();
+        assert!(a.is_ok());
+        assert_eq!(a.unwrap(), Natural::zero());
+
+        let a: Result<Natural, _> = "1".parse();
+        assert!(a.is_ok());
+        assert_eq!(a.unwrap(), Natural::one());
+
+        let a: Result<Natural, _> = "0000001".parse();
+        assert!(a.is_ok());
+        assert_eq!(a.unwrap(), Natural::one());
+
+        let a: Result<Natural, _> = "18446744073709551615".parse();
+        assert!(a.is_ok());
+        assert_eq!(a.unwrap(), u64::MAX.into());
+
+        let a: Result<Natural, _> = "18446744073709551616".parse();
+        assert!(a.is_ok());
+        assert_eq!(a.unwrap(), Natural::new(vec![0, 1]));
     }
 }
