@@ -3,29 +3,11 @@
 version = 4
 
 [[package]]
-name = "apars-macros"
-version = "0.1.0"
-dependencies = [
- "apars-proc-macros",
-]
-
-[[package]]
 name = "apars-proc-macros"
 version = "0.1.0"
 dependencies = [
- "parse-more",
  "proc-macro2",
  "quote",
- "syn",
-]
-
-[[package]]
-name = "parse-more"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "25319771aa1ad3d0a3735b666ac8a6fb39e2e927cf9f4b53265113b1a55b7a3e"
-dependencies = [
- "proc-macro2",
  "syn",
 ]
 
@@ -63,10 +45,3 @@ name = "unicode-ident"
 version = "1.0.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f63a545481291138910575129486daeaf8ac54aee4387fe7906919f7830c7d9d"
-
-[[package]]
-name = "virtual-float"
-version = "0.1.0"
-dependencies = [
- "apars-macros",
-]

@@ -4,8 +4,9 @@ use std::{
 };
 
 use crate::{
-    traits::{Header, HeaderView, ToMutable, WriteTo},
-    AsArrayUnchecked,
+    ip::IPV4Packet,
+    packet::{Packet, PacketView},
+    traits::{AsArrayUnchecked, Header, HeaderView, Payload, Prepare, ToMutable, WriteTo},
 };
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -51,6 +52,9 @@ impl<'a> HeaderView<'a> for TCPHeaderView<'a> {
     fn size(&self) -> usize {
         self.content.len()
     }
+    fn as_bytes(&self) -> &'a [u8] {
+        self.content
+    }
 }
 
 impl<'a> TCPHeaderView<'a> {
@@ -67,10 +71,10 @@ impl<'a> TCPHeaderView<'a> {
         u32::from_be_bytes(*unsafe { self.content[8..12].as_array_unchecked() })
     }
     pub fn get_data_offset(&self) -> u8 {
-        (self.content[12] >> 4)
+        self.content[12] >> 4
     }
     pub fn get_reserved(&self) -> u8 {
-        (self.content[12] & 0xF)
+        self.content[12] & 0xF
     }
     pub fn get_cwr(&self) -> bool {
         (self.content[13] & (1 << 7)) != 0
@@ -109,7 +113,6 @@ impl<'a> TCPHeaderView<'a> {
         &self.content[20..self.size() - 20]
     }
     pub fn get_parsed_options(&self) -> Vec<TCPOption> {
-        let (chunks, _) = self.content[20..self.size()].as_chunks::<4>();
         let mut i = 20;
         let mut res = vec![];
         while i < self.size() {
@@ -154,14 +157,14 @@ impl Debug for TCPHeaderView<'_> {
             .finish()
     }
 }
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub struct TCPOption {
     kind: u8,
     len: u8,
     data: Option<Vec<u8>>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub struct TCPHeader {
     pub source_port: u16,
     pub destination_port: u16,
@@ -183,15 +186,20 @@ pub struct TCPHeader {
     pub options: Vec<TCPOption>,
 }
 
+impl Prepare for TCPHeader {
+    fn prepare(&mut self) {
+        self.set_size();
+    }
+}
 impl<'a> Header<'a> for TCPHeader {
-    type ViewType = TCPHeaderView<'a>;
+    type ViewType<'b> = TCPHeaderView<'b>;
 
     fn size(&self) -> usize {
         self.data_offset as usize * 4
     }
 }
 impl WriteTo for TCPHeader {
-    fn write_to<W: Write>(&self, writer: &mut W) -> io::Result<()> {
+    fn write_to_inner<W: Write>(&mut self, writer: &mut W) -> io::Result<usize> {
         writer.write_all(&u16::to_be_bytes(self.source_port))?;
         writer.write_all(&u16::to_be_bytes(self.destination_port))?;
         writer.write_all(&u32::to_be_bytes(self.sequence_number))?;
@@ -220,20 +228,45 @@ impl WriteTo for TCPHeader {
             }
             current_size += option.len;
         }
-        if current_size % 4 == 0 {
+        if current_size % 4 != 0 {
             for _ in 0..4 - current_size % 4 {
-                writer.write_all(&[1]);
+                writer.write_all(&[1])?;
             }
         }
-        Ok(())
+        Ok(self.size())
     }
 }
 impl TCPHeader {
     pub fn set_size(&mut self) {
-        let mut current_size = 0;
-        for option in &self.options {
-            current_size += option.len;
-        }
-        self.data_offset = 5 + current_size.div_ceil(4);
+        let current_size: u16 = self.options.iter().map(|option| option.len as u16).sum();
+        self.data_offset = 5 + current_size.div_ceil(4) as u8;
+    }
+
+    pub fn answer(&mut self, incoming_packet: TCPHeaderView) {
+        (self.destination_port, self.source_port) = (
+            incoming_packet.get_source_port(),
+            incoming_packet.get_destination_port(),
+        );
+    }
+}
+
+pub type TCPPacket<'a, C = Vec<u8>> = Packet<'a, TCPHeader, C>;
+pub type TCPPacketView<'a, C = &'a [u8]> = PacketView<'a, TCPHeaderView<'a>, C>;
+
+impl<'a, C: Payload<'a>> Prepare for IPV4Packet<'a, TCPPacket<'a, C>> {
+    fn prepare(&mut self) {
+        self.header.prepare();
+        self.payload.prepare();
+        self.header.prepare_ip_header(self.size());
+        self.payload.header.checksum = 0;
+        let checksum = self
+            .payload
+            .compute_checksum()
+            .add_4bytes(self.header.source_address.0.to_be_bytes())
+            .add_4bytes(self.header.destination_address.0.to_be_bytes())
+            .add_byte(self.header.protocol as u8)
+            .add_2bytes((self.payload.payload.size() as u16).to_be_bytes())
+            .add_2bytes((self.payload.header.data_offset as u16 * 4).to_be_bytes());
+        self.payload.header.checksum = checksum.ones_complement()
     }
 }

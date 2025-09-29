@@ -4,8 +4,8 @@ use std::{
 };
 
 use crate::{
-    traits::{Header, HeaderView, ToMutable, WriteTo},
-    AsArrayUnchecked,
+    packet::{Packet, PacketView},
+    traits::{AsArrayUnchecked, Header, HeaderView, Payload, Prepare, ToMutable, WriteTo},
 };
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -62,6 +62,10 @@ impl<'a> HeaderView<'a> for ICMPHeaderView<'a> {
     fn size(&self) -> usize {
         4
     }
+
+    fn as_bytes(&self) -> &'a [u8] {
+        self.content
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -71,24 +75,32 @@ pub struct ICMPHeader {
     pub checksum: u16,
 }
 
+impl Prepare for ICMPHeader {}
 impl WriteTo for ICMPHeader {
-    fn write_to<W: Write>(&self, writer: &mut W) -> io::Result<()> {
+    fn write_to_inner<W: Write>(&mut self, writer: &mut W) -> io::Result<usize> {
         writer.write_all(&[self.message_type])?;
         writer.write_all(&[self.code])?;
         writer.write_all(&self.checksum.to_be_bytes())?;
-        Ok(())
+        Ok(self.size())
     }
 }
 
 impl<'a> Header<'a> for ICMPHeader {
-    type ViewType = ICMPHeaderView<'a>;
+    type ViewType<'b> = ICMPHeaderView<'b>;
 
     fn size(&self) -> usize {
         4
     }
-    // fn compute_checksum(&self) -> u16 {
-    //     let sum = ((self.message_type as u16) << 8) + self.code as u16;
-    //     let (sum, carry) = sum.overflowing_add(self.checksum);
-    //     sum + carry as u16
-    // }
+}
+
+pub type ICMPPacket<'a, C = Vec<u8>> = Packet<'a, ICMPHeader, C>;
+pub type ICMPPacketView<'a, C = &'a [u8]> = PacketView<'a, ICMPHeaderView<'a>, C>;
+
+impl<'a, C: Payload<'a>> Prepare for ICMPPacket<'a, C> {
+    fn prepare(&mut self) {
+        self.header.prepare();
+        self.payload.prepare();
+        self.header.checksum = 0;
+        self.header.checksum = self.compute_checksum().ones_complement();
+    }
 }

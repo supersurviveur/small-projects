@@ -1,7 +1,9 @@
+pub mod add;
+
 use std::{
     cmp::Ordering,
     fmt::{Binary, Debug, Display},
-    ops::{Add, Div, Mul, Shl, Shr, Sub},
+    ops::{Div, Mul, Shl, Shr, Sub},
     str::FromStr,
 };
 
@@ -32,7 +34,7 @@ macro_rules! from_impl_signed {
                 let sign = value < 0;
                 Self {
                     sign,
-                    abs: Natural::from(value.abs().cast_unsigned()),
+                    abs: Natural::from(value.unsigned_abs()),
                 }
             }
         })*
@@ -40,25 +42,53 @@ macro_rules! from_impl_signed {
 }
 
 from_impl_unsigned! {
-    u8, u16, u32, u64
+    u8, u16, u32, u64, usize
 }
 from_impl_signed! {
-    i8, i16, i32, i64
+    i8, i16, i32, i64, isize
 }
 
 #[derive(Debug)]
 pub struct TryFromIntegerError;
 
-impl TryFrom<Integer> for u8 {
-    type Error = TryFromIntegerError;
+macro_rules! try_from_integer_impl_unsigned {
+    ($($type:ident),*) => {
+        $(impl TryFrom<Integer> for $type {
+            type Error = TryFromIntegerError;
 
-    fn try_from(value: Integer) -> Result<Self, Self::Error> {
-        if value.sign {
-            Err(TryFromIntegerError)
-        } else {
-            value.abs.try_into().map_err(|_| TryFromIntegerError)
-        }
-    }
+            fn try_from(value: Integer) -> Result<Self, Self::Error> {
+                if value.sign {
+                    Err(TryFromIntegerError)
+                } else {
+                    value.abs.try_into().map_err(|_| TryFromIntegerError)
+                }
+            }
+        })*
+    };
+}
+
+try_from_integer_impl_unsigned! {
+    u8, u16, u32, u64, usize
+}
+
+macro_rules! try_from_integer_impl_signed {
+    ($($type:ident),*) => {
+        $(impl TryFrom<Integer> for $type {
+            type Error = TryFromIntegerError;
+
+            fn try_from(value: Integer) -> Result<Self, Self::Error> {
+                Ok(if value.sign {
+                    -1
+                } else {
+                   0
+                } * $type::try_from(value.abs).map_err(|_| TryFromIntegerError)?)
+            }
+        })*
+    };
+}
+
+try_from_integer_impl_signed! {
+    i8, i16, i32, i64, isize
 }
 
 impl Binary for Integer {
@@ -100,49 +130,36 @@ impl Integer {
     }
 
     pub fn quot_rem(self, rhs: Self) -> (Integer, Natural) {
-        let (quotient, rem) = self.abs.quot_rem(rhs.abs.clone());
-        if self.sign && !rem.is_zero() {
+        let (quotient, remainder) = self.abs.quot_rem(rhs.abs.clone());
+        if self.sign && !remainder.is_zero() {
             (
                 Integer::new(self.sign ^ rhs.sign, quotient + 1),
-                rhs.abs - rem,
+                rhs.abs - remainder,
             )
         } else {
-            (Integer::new(self.sign ^ rhs.sign, quotient), rem)
+            (Integer::new(self.sign ^ rhs.sign, quotient), remainder)
         }
     }
 }
 
-impl Add for Integer {
-    type Output = Integer;
-
-    fn add(self, rhs: Self) -> Self::Output {
-        match (self.sign, rhs.sign) {
-            (false, false) | (true, true) => Integer::new(self.sign, self.abs + rhs.abs),
-            (true, false) | (false, true) if self.abs <= rhs.abs => {
-                let abs = rhs.abs - self.abs;
-                Integer::new(!self.sign & !abs.is_zero(), abs)
-            }
-            (true, false) | (false, true) if self.abs > rhs.abs => {
-                let abs = self.abs - rhs.abs;
-                Integer::new(self.sign & !abs.is_zero(), abs)
-            }
-            _ => unreachable!(),
-        }
-    }
-}
 impl Sub for Integer {
     type Output = Integer;
 
-    fn sub(self, rhs: Self) -> Self::Output {
+    fn sub(mut self, mut rhs: Self) -> Self::Output {
         match (self.sign, rhs.sign) {
-            (true, false) | (false, true) => Integer::new(self.sign, self.abs + rhs.abs),
+            (true, false) | (false, true) => {
+                self.abs += rhs.abs;
+                self
+            }
             (false, false) | (true, true) if self.abs >= rhs.abs => {
-                let abs = self.abs - rhs.abs;
-                Integer::new(self.sign & !abs.is_zero(), abs)
+                self.abs -= rhs.abs;
+                self.sign &= !self.abs.is_zero();
+                self
             }
             (false, false) | (true, true) if self.abs < rhs.abs => {
-                let abs = rhs.abs - self.abs;
-                Integer::new(!self.sign & !abs.is_zero(), abs)
+                rhs.abs -= self.abs;
+                rhs.sign = !rhs.sign && !rhs.abs.is_zero();
+                rhs
             }
             _ => unreachable!(),
         }
@@ -179,7 +196,7 @@ impl Mul for Integer {
 
     fn mul(mut self, rhs: Self) -> Self::Output {
         self.sign ^= rhs.sign;
-        self.abs = self.abs * rhs.abs;
+        self.abs *= rhs.abs;
         self
     }
 }
@@ -188,18 +205,21 @@ impl Shl<usize> for Integer {
     type Output = Integer;
 
     fn shl(mut self, rhs: usize) -> Self::Output {
-        self.abs = self.abs.shl(rhs);
+        self.abs <<= rhs;
         self
     }
 }
+
 impl Shr<usize> for Integer {
     type Output = Integer;
 
     fn shr(mut self, rhs: usize) -> Self::Output {
         let tmp = self.abs.clone();
-        self.abs = self.abs.shr(rhs);
-        if !self.abs.is_zero() && self.abs.clone().shl(rhs) != tmp && self.sign {
-            self.abs = self.abs.shl(1);
+        self.abs >>= rhs;
+        // Check the negative case to round correctly
+        // (The current solution is horrible but a better one would need a wrapped shr or a power of 2 check to avoid shifting again)
+        if !self.abs.is_zero() && (self.abs.clone() << rhs) != tmp && self.sign {
+            self.abs <<= 1;
         }
         if self.abs.is_zero() {
             self.sign = false;

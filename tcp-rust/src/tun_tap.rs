@@ -1,11 +1,7 @@
-use std::borrow::Cow;
 use std::ffi::CStr;
 use std::fs::{File, OpenOptions};
 use std::io::{Error, Read, Result, Write};
-use std::mem::MaybeUninit;
-use std::os::raw::{c_char, c_int};
-use std::os::unix::io::{AsRawFd, IntoRawFd, RawFd};
-use std::ptr;
+use std::os::unix::io::{AsRawFd, RawFd};
 
 use libc::{
     __c_anonymous_ifr_ifru, ifreq, ioctl, IFF_NO_PI, IFF_TAP, IFF_TUN, IFNAMSIZ, TUNSETIFF,
@@ -25,20 +21,18 @@ unsafe fn tuntap_setup(fd: RawFd, name: &str, mode: Mode, packet_info: bool) -> 
     ifr.ifr_name[..name.len()]
         .copy_from_slice(unsafe { &*(name.as_bytes() as *const [u8] as *const [i8]) });
 
-    unsafe {
-        match mode {
-            Mode::Tun => ifr.ifr_ifru.ifru_flags = IFF_TUN as i16,
-            Mode::Tap => ifr.ifr_ifru.ifru_flags = IFF_TAP as i16,
-        }
+    match mode {
+        Mode::Tun => ifr.ifr_ifru.ifru_flags = IFF_TUN as i16,
+        Mode::Tap => ifr.ifr_ifru.ifru_flags = IFF_TAP as i16,
     }
-    if (!packet_info) {
+    if !packet_info {
         unsafe {
             ifr.ifr_ifru.ifru_flags |= IFF_NO_PI as i16;
         }
     }
     let ioresult = unsafe { ioctl(fd, TUNSETIFF, &raw const ifr) };
 
-    if (ioresult < 0) {
+    if ioresult < 0 {
         return Err(Error::last_os_error());
     }
     let new_name =
@@ -79,7 +73,7 @@ impl Interface {
         (&self.fd).read(buf)
     }
 
-    pub fn send(&self, buf: &[u8]) -> Result<usize> {
-        (&self.fd).write(buf)
+    pub fn send(&self, buf: &[u8]) -> Result<()> {
+        (&self.fd).write_all(buf)
     }
 }

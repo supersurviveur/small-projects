@@ -4,3 +4,12 @@ This repository contains some small games, projects... that I coded for fun or t
 
 - [Conway's game of life](./game-of-life)
 - [2048](./game-2048)
+
+## Network
+
+- [Tun/Tap server](./tcp-rust)
+
+## Libraries
+
+- [Weather forecast API](./meteo-rs)
+- [Integer with arbitrary precision](./virtual-float)

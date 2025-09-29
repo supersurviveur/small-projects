@@ -4,13 +4,15 @@ use std::{
 };
 
 use crate::{
-    traits::{Header, HeaderView, ToMutable, WriteTo},
-    AsArrayUnchecked,
+    checksum::Checksum,
+    packet::{Packet, PacketView},
+    traits::{AsArrayUnchecked, Header, HeaderView, Payload, Prepare, ToMutable, WriteTo},
 };
 
 #[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub enum IpProtocol {
+    #[default]
     Icmp = 1,
     Igmp = 2,
     Tcp = 6,
@@ -20,7 +22,7 @@ pub enum IpProtocol {
     Sctp = 132,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub struct IpV4Addr(pub u32);
 
 impl From<u32> for IpV4Addr {
@@ -60,16 +62,19 @@ impl<'a> HeaderView<'a> for IPV4HeaderView<'a> {
     fn from_slice(slice: &'a [u8]) -> Self {
         let ihl = slice[0] & 0xF;
         Self {
-            content: &slice[..20],
+            content: &slice[..ihl as usize * 4],
         }
     }
 
     fn size(&self) -> usize {
         self.content.len()
     }
+    fn as_bytes(&self) -> &'a [u8] {
+        self.content
+    }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub struct IPV4Header {
     pub version: u8,
     pub ihl: u8,
@@ -86,8 +91,9 @@ pub struct IPV4Header {
     pub destination_address: IpV4Addr,
 }
 
+impl Prepare for IPV4Header {}
 impl WriteTo for IPV4Header {
-    fn write_to<W: Write>(&self, writer: &mut W) -> io::Result<()> {
+    fn write_to_inner<W: Write>(&mut self, writer: &mut W) -> io::Result<usize> {
         writer.write_all(&[self.version << 4 | self.ihl, self.dscp << 2 | self.ecn])?;
         writer.write_all(&u16::to_be_bytes(self.total_length))?;
         writer.write_all(&u16::to_be_bytes(self.identification))?;
@@ -100,12 +106,12 @@ impl WriteTo for IPV4Header {
         writer.write_all(&u16::to_be_bytes(self.header_checksum))?;
         writer.write_all(&u32::to_be_bytes(self.source_address.0))?;
         writer.write_all(&u32::to_be_bytes(self.destination_address.0))?;
-        Ok(())
+        Ok(self.size())
     }
 }
 
 impl<'a> Header<'a> for IPV4Header {
-    type ViewType = IPV4HeaderView<'a>;
+    type ViewType<'b> = IPV4HeaderView<'b>;
 
     fn size(&self) -> usize {
         self.ihl as usize * 4
@@ -135,7 +141,7 @@ impl<'a> IPV4HeaderView<'a> {
         u16::from_be_bytes(*unsafe { self.content[4..=5].as_array_unchecked() })
     }
     pub fn get_flags(&self) -> u8 {
-        (self.content[6] >> 5)
+        self.content[6] >> 5
     }
     pub fn get_fragment_offset(&self) -> u16 {
         u16::from_be((((self.content[6] & 0x1F) as u16) << 8) + self.content[7] as u16)
@@ -156,6 +162,7 @@ impl<'a> IPV4HeaderView<'a> {
         u32::from_be_bytes(*unsafe { self.content[16..=19].as_array_unchecked() }).into()
     }
 }
+
 impl Debug for IpV4Addr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
@@ -196,27 +203,48 @@ impl Debug for IPV4HeaderView<'_> {
 }
 
 impl IPV4Header {
-    pub fn compute_checksum(&self) -> u16 {
-        let mut sum = ((self.version as u16) << 12)
-            + ((self.ihl as u16) << 8)
-            + ((self.dscp as u16) << 2)
-            + self.ecn as u16;
-        let mut carry = false;
-        (sum, carry) = sum.carrying_add(self.total_length, carry);
-        (sum, carry) = sum.carrying_add(self.identification, carry);
-        (sum, carry) = sum.carrying_add(((self.flags as u16) << 13) + self.fragment_offset, carry);
-        (sum, carry) = sum.carrying_add(((self.ttl as u16) << 8) + self.protocol as u16, carry);
-        (sum, carry) = sum.carrying_add(self.header_checksum, carry);
-        (sum, carry) = sum.carrying_add((self.source_address.0 >> 16) as u16, carry);
-        (sum, carry) = sum.carrying_add((self.source_address.0 & 0xFFFF) as u16, carry);
-        (sum, carry) = sum.carrying_add((self.destination_address.0 >> 16) as u16, carry);
-        (sum, carry) = sum.carrying_add((self.destination_address.0 & 0xFFFF) as u16, carry);
-        (sum, carry) = sum.overflowing_add(carry as u16);
-        sum += carry as u16;
-        sum
+    pub fn compute_checksum(&self) -> Checksum {
+        Checksum::new().add_2bytes(
+            (((self.version as u16) << 12)
+                | ((self.ihl as u16) << 8)
+                | ((self.dscp as u16) << 2)
+                | self.ecn as u16)
+                .to_be_bytes(),
+        ) + self.total_length
+            + self.identification
+            + ((self.flags as u16) << 13)
+            + self.fragment_offset
+            + ((self.ttl as u16) << 8)
+            + self.protocol as u16
+            + self.header_checksum
+            + (self.source_address.0 >> 16) as u16
+            + (self.source_address.0 & 0xFFFF) as u16
+            + (self.destination_address.0 >> 16) as u16
+            + (self.destination_address.0 & 0xFFFF) as u16
     }
     pub fn set_checksum(&mut self) {
         self.header_checksum = 0;
-        self.header_checksum = !self.compute_checksum();
+        self.header_checksum = self.compute_checksum().ones_complement();
+    }
+
+    pub fn answer(&mut self) {
+        (self.destination_address, self.source_address) =
+            (self.source_address, self.destination_address);
+    }
+
+    pub fn prepare_ip_header(&mut self, total_length: usize) {
+        self.total_length = total_length as u16;
+        self.set_checksum();
+    }
+}
+
+pub type IPV4Packet<'a, C = Vec<u8>> = Packet<'a, IPV4Header, C>;
+pub type IPV4PacketView<'a, C = &'a [u8]> = PacketView<'a, IPV4HeaderView<'a>, C>;
+
+impl<'a, C: Payload<'a>> Prepare for IPV4Packet<'a, C> {
+    default fn prepare(&mut self) {
+        self.header.prepare();
+        self.payload.prepare();
+        self.header.prepare_ip_header(self.size());
     }
 }
