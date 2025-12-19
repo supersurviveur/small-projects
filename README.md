@@ -13,3 +13,4 @@ This repository contains some small games, projects... that I coded for fun or t
 
 - [Weather forecast API](./meteo-rs)
 - [Integer with arbitrary precision](./virtual-float)
+- [Functional language in rust type system](./functional-type)
