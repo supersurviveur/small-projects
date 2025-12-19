@@ -68,12 +68,20 @@ impl Interface {
         let name = unsafe { tuntap_setup(fd.as_raw_fd(), ifname, mode, packet_info) }?;
         Ok(Interface { fd, name })
     }
+}
 
-    pub fn recv(&self, buf: &mut [u8]) -> Result<usize> {
-        (&self.fd).read(buf)
+impl Write for Interface {
+    fn write(&mut self, buf: &[u8]) -> Result<usize> {
+        self.fd.write(buf)
     }
 
-    pub fn send(&self, buf: &[u8]) -> Result<()> {
-        (&self.fd).write_all(buf)
+    fn flush(&mut self) -> Result<()> {
+        self.fd.flush()
+    }
+}
+
+impl Read for Interface {
+    fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
+        self.fd.read(buf)
     }
 }

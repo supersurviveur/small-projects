@@ -5,7 +5,7 @@ use std::{
 
 use crate::{
     packet::{Packet, PacketView},
-    traits::{AsArrayUnchecked, Header, HeaderView, Payload, Prepare, ToMutable, WriteTo},
+    traits::{AsArrayUnchecked, Data, DataOwned, Prepare, ToMutable, WriteTo},
 };
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -54,17 +54,21 @@ impl<'a> ToMutable for ICMPHeaderView<'a> {
     }
 }
 
-impl<'a> HeaderView<'a> for ICMPHeaderView<'a> {
-    fn from_slice(slice: &'a [u8]) -> Self {
-        Self { content: slice }
+impl<'a> From<&'a [u8]> for ICMPHeaderView<'a> {
+    fn from(value: &'a [u8]) -> Self {
+        Self { content: value }
     }
+}
 
+impl<'a> AsRef<[u8]> for ICMPHeaderView<'a> {
+    fn as_ref(&self) -> &[u8] {
+        self.content
+    }
+}
+
+impl Data for ICMPHeaderView<'_> {
     fn size(&self) -> usize {
         4
-    }
-
-    fn as_bytes(&self) -> &'a [u8] {
-        self.content
     }
 }
 
@@ -85,18 +89,16 @@ impl WriteTo for ICMPHeader {
     }
 }
 
-impl<'a> Header<'a> for ICMPHeader {
-    type ViewType<'b> = ICMPHeaderView<'b>;
-
+impl Data for ICMPHeader {
     fn size(&self) -> usize {
         4
     }
 }
 
-pub type ICMPPacket<'a, C = Vec<u8>> = Packet<'a, ICMPHeader, C>;
+pub type ICMPPacket<C = Vec<u8>> = Packet<ICMPHeader, C>;
 pub type ICMPPacketView<'a, C = &'a [u8]> = PacketView<'a, ICMPHeaderView<'a>, C>;
 
-impl<'a, C: Payload<'a>> Prepare for ICMPPacket<'a, C> {
+impl<C: DataOwned> Prepare for ICMPPacket<C> {
     fn prepare(&mut self) {
         self.header.prepare();
         self.payload.prepare();

@@ -1,3 +1,5 @@
+pub mod manager;
+
 use std::{
     fmt::Debug,
     io::{self, Write},
@@ -6,7 +8,7 @@ use std::{
 use crate::{
     ip::IPV4Packet,
     packet::{Packet, PacketView},
-    traits::{AsArrayUnchecked, Header, HeaderView, Payload, Prepare, ToMutable, WriteTo},
+    traits::{AsArrayUnchecked, Data, DataOwned, Prepare, ToMutable, WriteTo},
 };
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -41,19 +43,24 @@ impl ToMutable for TCPHeaderView<'_> {
     }
 }
 
-impl<'a> HeaderView<'a> for TCPHeaderView<'a> {
-    fn from_slice(slice: &'a [u8]) -> Self {
-        let length = (slice[12] >> 4) as usize * 4;
+impl<'a> From<&'a [u8]> for TCPHeaderView<'a> {
+    fn from(value: &'a [u8]) -> Self {
+        let length = (value[12] >> 4) as usize * 4;
         Self {
-            content: &slice[..length],
+            content: &value[..length],
         }
     }
+}
 
+impl<'a> AsRef<[u8]> for TCPHeaderView<'a> {
+    fn as_ref(&self) -> &[u8] {
+        self.content
+    }
+}
+
+impl Data for TCPHeaderView<'_> {
     fn size(&self) -> usize {
         self.content.len()
-    }
-    fn as_bytes(&self) -> &'a [u8] {
-        self.content
     }
 }
 
@@ -191,9 +198,7 @@ impl Prepare for TCPHeader {
         self.set_size();
     }
 }
-impl<'a> Header<'a> for TCPHeader {
-    type ViewType<'b> = TCPHeaderView<'b>;
-
+impl Data for TCPHeader {
     fn size(&self) -> usize {
         self.data_offset as usize * 4
     }
@@ -250,10 +255,10 @@ impl TCPHeader {
     }
 }
 
-pub type TCPPacket<'a, C = Vec<u8>> = Packet<'a, TCPHeader, C>;
+pub type TCPPacket<C = Vec<u8>> = Packet<TCPHeader, C>;
 pub type TCPPacketView<'a, C = &'a [u8]> = PacketView<'a, TCPHeaderView<'a>, C>;
 
-impl<'a, C: Payload<'a>> Prepare for IPV4Packet<'a, TCPPacket<'a, C>> {
+impl<C: DataOwned> Prepare for IPV4Packet<TCPPacket<C>> {
     fn prepare(&mut self) {
         self.header.prepare();
         self.payload.prepare();

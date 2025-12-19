@@ -6,7 +6,7 @@ use std::{
 use crate::{
     checksum::Checksum,
     packet::{Packet, PacketView},
-    traits::{AsArrayUnchecked, Header, HeaderView, Payload, Prepare, ToMutable, WriteTo},
+    traits::{AsArrayUnchecked, Data, DataOwned, Prepare, ToMutable, WriteTo},
 };
 
 #[repr(u8)]
@@ -58,19 +58,23 @@ impl ToMutable for IPV4HeaderView<'_> {
     }
 }
 
-impl<'a> HeaderView<'a> for IPV4HeaderView<'a> {
-    fn from_slice(slice: &'a [u8]) -> Self {
-        let ihl = slice[0] & 0xF;
+impl<'a> From<&'a [u8]> for IPV4HeaderView<'a> {
+    fn from(value: &'a [u8]) -> Self {
+        let ihl = value[0] & 0xF;
         Self {
-            content: &slice[..ihl as usize * 4],
+            content: &value[..ihl as usize * 4],
         }
     }
+}
+impl<'a> AsRef<[u8]> for IPV4HeaderView<'a> {
+    fn as_ref(&self) -> &[u8] {
+        self.content
+    }
+}
 
+impl Data for IPV4HeaderView<'_> {
     fn size(&self) -> usize {
         self.content.len()
-    }
-    fn as_bytes(&self) -> &'a [u8] {
-        self.content
     }
 }
 
@@ -110,9 +114,7 @@ impl WriteTo for IPV4Header {
     }
 }
 
-impl<'a> Header<'a> for IPV4Header {
-    type ViewType<'b> = IPV4HeaderView<'b>;
-
+impl Data for IPV4Header {
     fn size(&self) -> usize {
         self.ihl as usize * 4
     }
@@ -238,10 +240,10 @@ impl IPV4Header {
     }
 }
 
-pub type IPV4Packet<'a, C = Vec<u8>> = Packet<'a, IPV4Header, C>;
+pub type IPV4Packet<C = Vec<u8>> = Packet<IPV4Header, C>;
 pub type IPV4PacketView<'a, C = &'a [u8]> = PacketView<'a, IPV4HeaderView<'a>, C>;
 
-impl<'a, C: Payload<'a>> Prepare for IPV4Packet<'a, C> {
+impl<C: DataOwned> Prepare for IPV4Packet<C> {
     default fn prepare(&mut self) {
         self.header.prepare();
         self.payload.prepare();

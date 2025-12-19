@@ -59,7 +59,7 @@ impl Checksum {
         add_slice_inner!(2, add_2bytes);
 
         if !bytes.is_empty() {
-            self = self.add_byte(bytes[0]);
+            self = self.add_2bytes([bytes[0], 0]);
         }
 
         self
